@@ -61,11 +61,11 @@ st.markdown("""
 API_TOKEN = st.secrets["HF_TOKEN"]
 headers = {"Authorization": f"Bearer {API_TOKEN}"}
 
-# Models configuration
+# Updated Models configuration with more reliable models
 MODELS = {
-    "summarizer": "google/flan-t5-large",
-    "quiz": "EleutherAI/gpt-j-6B",
-    "qa": "allenai/unifiedqa-t5-large"
+    "summarizer": "facebook/bart-large-cnn",  # Changed to BART for better summarization
+    "quiz": "microsoft/DialoGPT-medium",      # Changed to DialoGPT for better question generation
+    "qa": "deepset/roberta-base-squad2"       # Changed to RoBERTa for QA tasks
 }
 
 # Sidebar
@@ -129,7 +129,7 @@ def query_model(model_name, payload, max_retries=3):
     return None
 
 def generate_summary(text):
-    """Enhanced summarization with style and length control"""
+    """Enhanced summarization using BART model"""
     length_tokens = {
         "Very Short": 50,
         "Short": 100,
@@ -137,15 +137,8 @@ def generate_summary(text):
         "Long": 250
     }
     
-    style_prompts = {
-        "Concise": "Summarize this concisely: ",
-        "Detailed": "Provide a detailed summary of: ",
-        "Academic": "Create an academic summary of: "
-    }
-    
-    prompt = f"{style_prompts[style]}{text}"
     payload = {
-        "inputs": prompt,
+        "inputs": text,
         "parameters": {
             "max_length": length_tokens[summary_length],
             "min_length": length_tokens[summary_length] // 2,
@@ -154,30 +147,53 @@ def generate_summary(text):
     }
     
     result = query_model(MODELS["summarizer"], payload)
-    return result[0] if result else "Error generating summary."
+    if result and isinstance(result, list):
+        return result[0]['summary_text']
+    return "Error generating summary."
 
 def generate_quiz_questions(text):
-    """Enhanced quiz generation with multiple types and difficulty levels"""
+    """Enhanced quiz generation using DialoGPT"""
     questions = []
     
+    question_templates = {
+        "Multiple Choice": [
+            "Generate a multiple choice question about: {}",
+            "Create a quiz question with 4 options about: {}",
+            "Make a multiple choice question based on: {}"
+        ],
+        "True/False": [
+            "Create a true/false question about: {}",
+            "Generate a true/false statement based on: {}"
+        ],
+        "Short Answer": [
+            "Create a short answer question about: {}",
+            "Generate a question that requires a brief explanation about: {}"
+        ]
+    }
+    
     for _ in range(num_questions):
-        if "Multiple Choice" in question_type:
-            prompt = f"Generate a {difficulty.lower()} multiple choice question about: {text}"
-            result = query_model(MODELS["quiz"], {"inputs": prompt})
+        for q_type in question_type:
+            template = random.choice(question_templates[q_type])
+            prompt = template.format(text)
+            
+            payload = {
+                "inputs": prompt,
+                "parameters": {
+                    "max_length": 150,
+                    "temperature": 0.7,
+                    "do_sample": True
+                }
+            }
+            
+            result = query_model(MODELS["quiz"], payload)
             if result:
-                questions.append({"type": "mc", "content": result[0]})
-                
-        if "True/False" in question_type:
-            prompt = f"Generate a {difficulty.lower()} true/false question about: {text}"
-            result = query_model(MODELS["quiz"], {"inputs": prompt})
-            if result:
-                questions.append({"type": "tf", "content": result[0]})
-                
-        if "Short Answer" in question_type:
-            prompt = f"Generate a {difficulty.lower()} short answer question about: {text}"
-            result = query_model(MODELS["qa"], {"inputs": prompt})
-            if result:
-                questions.append({"type": "sa", "content": result[0]})
+                # Process the response based on question type
+                if isinstance(result, list) and result[0].get('generated_text'):
+                    content = result[0]['generated_text']
+                    questions.append({
+                        "type": q_type.lower().replace(" ", "_"),
+                        "content": content
+                    })
     
     return questions
 
@@ -282,9 +298,9 @@ if st.button("✨ Process", type="primary"):
                         with st.expander(f"Question {i} ({q['type'].upper()})"):
                             st.markdown(f'<div class="info-box">{q["content"]}</div>', unsafe_allow_html=True)
                             
-                            if q["type"] == "mc":
+                            if q["type"] == "multiple_choice":
                                 st.radio(f"Select answer for Q{i}", ["A", "B", "C", "D"], key=f"q{i}")
-                            elif q["type"] == "tf":
+                            elif q["type"] == "true_false":
                                 st.radio(f"Select answer for Q{i}", ["True", "False"], key=f"q{i}")
                             else:
                                 st.text_input("Your answer:", key=f"q{i}")
