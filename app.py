@@ -16,12 +16,12 @@ feature = st.sidebar.selectbox("Choose a feature:", ["Quiz Generator", "Math Sol
 def ask_gpt(prompt):
     try:
         response = openai.chat.completions.create(
-            model="gpt-4",
+            model="gpt-3.5-turbo",  # instead of gpt-4
             messages=[
-                {"role": "system", "content": "You are a helpful educational assistant."},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": "Hello!"}
             ]
         )
+
         return response.choices[0].message.content
 
     except Exception as e:
