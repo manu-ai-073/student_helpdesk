@@ -1,91 +1,89 @@
 import streamlit as st
-import sympy
-from sympy import symbols, Eq, solve
 import requests
 
-# ------------------ CONFIG ------------------
-st.set_page_config(page_title="📚 Student Helper Chatbot", layout="centered")
+# Load secrets
+HF_TOKEN = st.secrets.get("HF_TOKEN", "")
+WOLFRAM_APP_ID = st.secrets.get("WOLFRAM_APP_ID", "")
+
+# App Title and Description
+st.set_page_config(page_title="📚 Student Helper Chatbot", layout="wide")
 st.title("🤖 Student Helper Chatbot")
 st.markdown("""
 This chatbot helps you with:
-- 🧠 Summarizing text
+- 🧠 Summarizing academic text
 - 🧮 Solving math expressions or equations
 - 📝 Generating quizzes from your input
 """)
 
-# ------------------ INPUT ------------------
-st.sidebar.title("🔧 Features")
-feature = st.sidebar.radio("Select a feature:", ["Math Solver", "Summarizer", "Quiz Generator"])
+# Sidebar Navigation
+feature = st.sidebar.radio("Choose a feature", ["📚 Summarizer", "🧮 Math Solver", "📝 Quiz Generator"])
 
-input_text = st.text_area("✍️ Enter your text or equation here:")
+# Universal Text Input
+st.subheader(feature)
+input_text = st.text_area("✍️ Enter your text or equation here:", height=200)
 
-# ------------------ Math Solver ------------------
-def solve_equation(expr):
+# Function: Summarizer using Cohere API
+def summarize_with_cohere(text):
     try:
-        x = symbols("x")  # define the variable
-        if "=" in expr:
-            lhs, rhs = expr.split("=")
-            lhs = sympy.sympify(lhs.strip())
-            rhs = sympy.sympify(rhs.strip())
-            eq = Eq(lhs, rhs)
-            sol = solve(eq, x)
-            return f"✅ Solution: x = {sol[0]}" if sol else "❌ No solution found."
-        else:
-            res = sympy.sympify(expr)
-            return f"✅ Result: {res}"
-    except Exception as e:
-        return f"❌ Error: {str(e)}"
-
-# ------------------ Summarizer ------------------
-def summarize_text(text):
-    try:
-        API_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn"
-        headers = {"Authorization": f"Bearer {st.secrets['HF_TOKEN']}"}
-        payload = {"inputs": text}
-        response = requests.post(API_URL, headers=headers, json=payload)
-        summary = response.json()
-        if isinstance(summary, list):
-            return f"✅ Summary: {summary[0]['summary_text']}"
-        else:
-            return f"❌ Error while summarizing."
-    except Exception as e:
-        return f"❌ Error: {str(e)}"
-
-# ------------------ Quiz Generator ------------------
-def generate_quiz(text):
-    try:
-        API_URL = "https://api-inference.huggingface.co/models/tuner007/t5_paraphrase_paws"
-        headers = {"Authorization": f"Bearer {st.secrets['HF_TOKEN']}"}
-        payload = {"inputs": f"paraphrase: {text} </s>", "parameters": {"num_return_sequences": 1}}
-        response = requests.post(API_URL, headers=headers, json=payload)
+        url = "https://api.cohere.ai/v1/summarize"
+        headers = {
+            "Authorization": f"Bearer {HF_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "text": text,
+            "length": "medium",
+            "format": "paragraph",
+            "model": "command",
+            "extractiveness": "auto"
+        }
+        response = requests.post(url, headers=headers, json=payload)
         result = response.json()
-        if isinstance(result, list):
-            return f"✅ Quiz Question: {result[0]['generated_text']}"
-        else:
-            return f"❌ Error while generating quiz."
+        return result.get("summary", "❌ Summarization failed.")
     except Exception as e:
-        return f"❌ Error: {str(e)}"
+        return f"❌ Error: {e}"
 
-# ------------------ Output Area ------------------
-if st.button("🔍 Submit"):
-    if not input_text.strip():
-        st.warning("Please enter some input.")
-    else:
-        if feature == "Math Solver":
-            result = solve_equation(input_text)
-            st.subheader("🧮 Math Solver Result")
-            st.write(result)
+# Function: Math Solver using WolframAlpha API
+def solve_math_wolfram(query):
+    try:
+        url = f"http://api.wolframalpha.com/v1/result?i={requests.utils.quote(query)}&appid={WOLFRAM_APP_ID}"
+        response = requests.get(url)
+        if response.status_code == 200:
+            return response.text
+        else:
+            return "❌ Wolfram Alpha could not solve this."
+    except Exception as e:
+        return f"❌ Error: {e}"
 
-        elif feature == "Summarizer":
-            result = summarize_text(input_text)
-            st.subheader("🧠 Summary")
-            st.write(result)
+# Function: Quiz Generator using T5 Model from Hugging Face
+def generate_quiz(text, num_questions=5):
+    try:
+        API_URL = "https://api-inference.huggingface.co/models/mrm8488/t5-base-finetuned-question-generation-ap"
+        headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+        results = []
+        for _ in range(num_questions):
+            payload = {"inputs": f"generate questions: {text}"}
+            response = requests.post(API_URL, headers=headers, json=payload)
+            result = response.json()
+            if isinstance(result, list):
+                results.append(f"🔹 {result[0]['generated_text']}")
+            else:
+                results.append("⚠️ Failed to generate question.")
+        return "\n".join(results)
+    except Exception as e:
+        return f"❌ Error: {e}"
 
-        elif feature == "Quiz Generator":
-            result = generate_quiz(input_text)
-            st.subheader("🎯 Quiz Generator Result")
-            st.write(result)
+# Run Feature on Submit
+if st.button("🚀 Run") and input_text:
+    if feature == "📚 Summarizer":
+        st.subheader("🧠 Summary")
+        st.success(summarize_with_cohere(input_text))
 
-# ------------------ Footer ------------------
-st.markdown("---")
-st.caption("Built with ❤️ using Streamlit and Hugging Face APIs")
+    elif feature == "🧮 Math Solver":
+        st.subheader("✅ Solution")
+        st.success(solve_math_wolfram(input_text))
+
+    elif feature == "📝 Quiz Generator":
+        st.subheader("🎯 Quiz Generator Result")
+        num = st.slider("Select number of questions", 1, 10, 5)
+        st.success(generate_quiz(input_text, num))
