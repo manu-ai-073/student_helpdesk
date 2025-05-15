@@ -17,18 +17,20 @@ This chatbot helps you with:
 # Feature selector
 feature = st.selectbox("Select a feature:", ["Summarizer", "Math Solver", "Quiz Generator"])
 
-# Input area
-user_input = st.text_area("✍️ Enter your text or equation here:")
+# Input area for Summarizer and Math Solver
+if feature in ["Summarizer", "Math Solver"]:
+    user_input = st.text_area("✍️ Enter your text or equation here:")
 
+# Input area for Quiz Generator
 if feature == "Quiz Generator":
+    quiz_topic = st.text_input("Enter quiz topic:")
     num_questions = st.number_input("How many questions to generate?", min_value=1, max_value=10, value=3)
 
 if st.button("🔍 Run"):
-    if not user_input.strip():
-        st.warning("Please enter some text or expression.")
-    else:
-        # --- Summarizer ---
-        if feature == "Summarizer":
+    if feature == "Summarizer":
+        if not user_input.strip():
+            st.warning("Please enter some text to summarize.")
+        else:
             try:
                 headers = {
                     "Authorization": f"Bearer {st.secrets['HF_TOKEN']}",
@@ -50,8 +52,10 @@ if st.button("🔍 Run"):
             except Exception as e:
                 st.error(f"❌ Exception: {e}")
 
-        # --- Math Solver using MathGPT API ---
-        elif feature == "Math Solver":
+    elif feature == "Math Solver":
+        if not user_input.strip():
+            st.warning("Please enter a math problem.")
+        else:
             try:
                 math_prompt = f"Solve the following math problem step by step: {user_input}"
                 headers = {
@@ -62,7 +66,7 @@ if st.button("🔍 Run"):
                     "inputs": math_prompt
                 }
                 response = requests.post(
-                    "https://api-inference.huggingface.co/models/google/flan-t5-large",
+                    "https://api-inference.huggingface.co/models/google/flan-t5-xl",
                     headers=headers, json=payload
                 )
                 result = response.json()
@@ -74,19 +78,21 @@ if st.button("🔍 Run"):
             except Exception as e:
                 st.error(f"❌ Exception: {e}")
 
-        # --- Quiz Generator ---
-        elif feature == "Quiz Generator":
+    elif feature == "Quiz Generator":
+        if not quiz_topic.strip():
+            st.warning("Please enter a topic for the quiz.")
+        else:
             try:
                 headers = {
                     "Authorization": f"Bearer {st.secrets['HF_TOKEN']}",
                     "Content-Type": "application/json"
                 }
-                prompt = f"Generate {num_questions} multiple-choice quiz questions with answers from the following topic: {user_input}"
+                prompt = f"Generate {num_questions} multiple choice quiz questions with 4 options and answers for the topic: {quiz_topic}. Format them clearly."
                 payload = {
                     "inputs": prompt
                 }
                 response = requests.post(
-                    "https://api-inference.huggingface.co/models/google/flan-t5-large",
+                    "https://api-inference.huggingface.co/models/google/flan-t5-xl",
                     headers=headers, json=payload
                 )
                 result = response.json()
