@@ -4,18 +4,12 @@ import sympy
 from sympy import symbols, Eq, solve
 import time
 import random
-import json
 
 # Configure page
 st.set_page_config(
     page_title="🎓 Smart Study Assistant",
     layout="wide",
-    initial_sidebar_state="expanded",
-    menu_items={
-        'Get Help': 'https://www.github.com/yourusername/smart-study-assistant',
-        'Report a bug': "https://www.github.com/yourusername/smart-study-assistant/issues",
-        'About': "# Smart Study Assistant v2.0\nYour AI-powered study companion"
-    }
+    initial_sidebar_state="expanded"
 )
 
 # Custom CSS for better UI
@@ -51,9 +45,6 @@ st.markdown("""
         border: 1px solid #ffeeba;
         color: #856404;
     }
-    .st-emotion-cache-16idsys p {
-        font-size: 1.2em;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -61,11 +52,10 @@ st.markdown("""
 API_TOKEN = st.secrets["HF_TOKEN"]
 headers = {"Authorization": f"Bearer {API_TOKEN}"}
 
-# Updated Models configuration with more reliable models
+# Updated Models configuration with verified working models
 MODELS = {
-    "summarizer": "facebook/bart-large-cnn",  # Changed to BART for better summarization
-    "quiz": "microsoft/DialoGPT-medium",      # Changed to DialoGPT for better question generation
-    "qa": "deepset/roberta-base-squad2"       # Changed to RoBERTa for QA tasks
+    "summarizer": "sshleifer/distilbart-cnn-12-6",  # Changed to a lighter, faster model
+    "quiz": "google/flan-t5-base"                   # Changed to a more reliable model
 }
 
 # Sidebar
@@ -91,11 +81,6 @@ with st.sidebar:
             options=["Very Short", "Short", "Medium", "Long"],
             value="Medium"
         )
-        style = st.select_slider(
-            "Style",
-            options=["Concise", "Detailed", "Academic"],
-            value="Detailed"
-        )
         
     elif feature == "❓ Quiz Generator":
         st.markdown("### Quiz Settings")
@@ -104,15 +89,10 @@ with st.sidebar:
             ["Multiple Choice", "True/False", "Short Answer"],
             default=["Multiple Choice"]
         )
-        difficulty = st.select_slider(
-            "Difficulty",
-            options=["Easy", "Medium", "Hard"],
-            value="Medium"
-        )
-        num_questions = st.slider("Number of Questions", 1, 10, 3)
+        num_questions = st.slider("Number of Questions", 1, 5, 3)
 
 def query_model(model_name, payload, max_retries=3):
-    """Enhanced model query with better error handling and retry logic"""
+    """Enhanced model query with better error handling"""
     url = f"https://api-inference.huggingface.co/models/{model_name}"
     
     for attempt in range(max_retries):
@@ -129,20 +109,23 @@ def query_model(model_name, payload, max_retries=3):
     return None
 
 def generate_summary(text):
-    """Enhanced summarization using BART model"""
-    length_tokens = {
+    """Improved summarization with better prompting"""
+    length_map = {
         "Very Short": 50,
         "Short": 100,
         "Medium": 150,
         "Long": 250
     }
     
+    max_length = length_map[summary_length]
+    
     payload = {
         "inputs": text,
         "parameters": {
-            "max_length": length_tokens[summary_length],
-            "min_length": length_tokens[summary_length] // 2,
-            "do_sample": False
+            "max_length": max_length,
+            "min_length": max_length // 2,
+            "do_sample": False,
+            "early_stopping": True
         }
     }
     
@@ -152,53 +135,49 @@ def generate_summary(text):
     return "Error generating summary."
 
 def generate_quiz_questions(text):
-    """Enhanced quiz generation using DialoGPT"""
+    """Improved quiz generation with T5"""
     questions = []
     
-    question_templates = {
+    templates = {
         "Multiple Choice": [
-            "Generate a multiple choice question about: {}",
-            "Create a quiz question with 4 options about: {}",
-            "Make a multiple choice question based on: {}"
+            f"Generate a multiple choice question with 4 options about this text: {text}",
+            f"Create a quiz question with options A, B, C, D based on: {text}"
         ],
         "True/False": [
-            "Create a true/false question about: {}",
-            "Generate a true/false statement based on: {}"
+            f"Create a true/false question about: {text}",
+            f"Make a statement that is either true or false about: {text}"
         ],
         "Short Answer": [
-            "Create a short answer question about: {}",
-            "Generate a question that requires a brief explanation about: {}"
+            f"Generate a short answer question about: {text}",
+            f"Create a question that tests understanding of: {text}"
         ]
     }
     
     for _ in range(num_questions):
         for q_type in question_type:
-            template = random.choice(question_templates[q_type])
-            prompt = template.format(text)
+            prompt = random.choice(templates[q_type])
             
             payload = {
                 "inputs": prompt,
                 "parameters": {
                     "max_length": 150,
                     "temperature": 0.7,
-                    "do_sample": True
+                    "do_sample": True,
+                    "top_p": 0.9
                 }
             }
             
             result = query_model(MODELS["quiz"], payload)
-            if result:
-                # Process the response based on question type
-                if isinstance(result, list) and result[0].get('generated_text'):
-                    content = result[0]['generated_text']
-                    questions.append({
-                        "type": q_type.lower().replace(" ", "_"),
-                        "content": content
-                    })
+            if result and isinstance(result, list):
+                questions.append({
+                    "type": q_type,
+                    "content": result[0]['generated_text'].strip()
+                })
     
     return questions
 
 def solve_math(expr):
-    """Enhanced math solver with step-by-step solutions"""
+    """Math solver with step-by-step solutions"""
     try:
         steps = []
         if ";" in expr:
@@ -292,18 +271,21 @@ if st.button("✨ Process", type="primary"):
             else:  # Quiz Generator
                 with st.spinner("Generating questions..."):
                     questions = generate_quiz_questions(user_input)
-                    st.markdown("### 📝 Generated Questions")
-                    
-                    for i, q in enumerate(questions, 1):
-                        with st.expander(f"Question {i} ({q['type'].upper()})"):
-                            st.markdown(f'<div class="info-box">{q["content"]}</div>', unsafe_allow_html=True)
-                            
-                            if q["type"] == "multiple_choice":
-                                st.radio(f"Select answer for Q{i}", ["A", "B", "C", "D"], key=f"q{i}")
-                            elif q["type"] == "true_false":
-                                st.radio(f"Select answer for Q{i}", ["True", "False"], key=f"q{i}")
-                            else:
-                                st.text_input("Your answer:", key=f"q{i}")
+                    if questions:
+                        st.markdown("### 📝 Generated Questions")
+                        
+                        for i, q in enumerate(questions, 1):
+                            with st.expander(f"Question {i} ({q['type']})"):
+                                st.markdown(f'<div class="info-box">{q["content"]}</div>', unsafe_allow_html=True)
+                                
+                                if q["type"] == "Multiple Choice":
+                                    st.radio(f"Select answer for Q{i}", ["A", "B", "C", "D"], key=f"q{i}")
+                                elif q["type"] == "True/False":
+                                    st.radio(f"Select answer for Q{i}", ["True", "False"], key=f"q{i}")
+                                else:
+                                    st.text_input("Your answer:", key=f"q{i}")
+                    else:
+                        st.error("Failed to generate questions. Please try again.")
             
             # Show original input
             with st.expander("Show Original Input"):
