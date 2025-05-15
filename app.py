@@ -3,152 +3,308 @@ import requests
 import sympy
 from sympy import symbols, Eq, solve
 import time
+import random
+import json
+
+# Configure page
+st.set_page_config(
+    page_title="🎓 Smart Study Assistant",
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Get Help': 'https://www.github.com/yourusername/smart-study-assistant',
+        'Report a bug': "https://www.github.com/yourusername/smart-study-assistant/issues",
+        'About': "# Smart Study Assistant v2.0\nYour AI-powered study companion"
+    }
+)
+
+# Custom CSS for better UI
+st.markdown("""
+<style>
+    .main {
+        background-color: #f5f5f5;
+    }
+    .stButton>button {
+        width: 100%;
+        border-radius: 5px;
+        height: 3em;
+        font-weight: bold;
+    }
+    .success-box {
+        padding: 1rem;
+        border-radius: 5px;
+        background-color: #d4edda;
+        border: 1px solid #c3e6cb;
+        color: #155724;
+    }
+    .info-box {
+        padding: 1rem;
+        border-radius: 5px;
+        background-color: #cce5ff;
+        border: 1px solid #b8daff;
+        color: #004085;
+    }
+    .warning-box {
+        padding: 1rem;
+        border-radius: 5px;
+        background-color: #fff3cd;
+        border: 1px solid #ffeeba;
+        color: #856404;
+    }
+    .st-emotion-cache-16idsys p {
+        font-size: 1.2em;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # Load Hugging Face Token from secrets
 API_TOKEN = st.secrets["HF_TOKEN"]
 headers = {"Authorization": f"Bearer {API_TOKEN}"}
 
-# Streamlit UI
-st.set_page_config(page_title="🎓 Student Helper", layout="wide")
-st.title("🎓 Student Helper Chatbot")
-st.markdown("---")
+# Models configuration
+MODELS = {
+    "summarizer": "google/flan-t5-large",
+    "quiz": "EleutherAI/gpt-j-6B",
+    "qa": "allenai/unifiedqa-t5-large"
+}
 
-# Feature selector
-feature = st.selectbox(
-    "Select a Feature",
-    ["Summarizer", "Math Solver", "Quiz Generator"],
-    help="Choose the tool you want to use"
-)
-
-# Sidebar with feature descriptions
+# Sidebar
 with st.sidebar:
-    st.header("📚 Features Guide")
-    st.markdown("""
-    **Summarizer**: Condenses long text into key points using AI
+    st.image("https://img.icons8.com/color/96/000000/student-center.png", width=100)
+    st.title("Smart Study Assistant")
     
-    **Math Solver**: Solves equations and mathematical expressions
+    st.markdown("---")
     
-    **Quiz Generator**: Creates questions from your study material
-    """)
+    feature = st.radio(
+        "Choose Your Tool",
+        ["📝 Smart Summarizer", "🧮 Math Solver", "❓ Quiz Generator"],
+        help="Select the tool you want to use"
+    )
+    
+    st.markdown("---")
+    
+    # Feature-specific settings
+    if feature == "📝 Smart Summarizer":
+        st.markdown("### Summarizer Settings")
+        summary_length = st.select_slider(
+            "Summary Length",
+            options=["Very Short", "Short", "Medium", "Long"],
+            value="Medium"
+        )
+        style = st.select_slider(
+            "Style",
+            options=["Concise", "Detailed", "Academic"],
+            value="Detailed"
+        )
+        
+    elif feature == "❓ Quiz Generator":
+        st.markdown("### Quiz Settings")
+        question_type = st.multiselect(
+            "Question Types",
+            ["Multiple Choice", "True/False", "Short Answer"],
+            default=["Multiple Choice"]
+        )
+        difficulty = st.select_slider(
+            "Difficulty",
+            options=["Easy", "Medium", "Hard"],
+            value="Medium"
+        )
+        num_questions = st.slider("Number of Questions", 1, 10, 3)
 
-# Hugging Face Models
-SUMMARIZER_MODEL = "facebook/bart-large-xsum"  # Better summarization model
-QUIZ_MODEL = "MingZhong/macaw-large"  # Dedicated question generation model
-
-def query_huggingface(model_url, payload, max_retries=3, timeout=30):
-    """Generic function to query Hugging Face with retry logic"""
+def query_model(model_name, payload, max_retries=3):
+    """Enhanced model query with better error handling and retry logic"""
+    url = f"https://api-inference.huggingface.co/models/{model_name}"
+    
     for attempt in range(max_retries):
         try:
-            response = requests.post(model_url, headers=headers, json=payload, timeout=timeout)
-            response.raise_for_status()
-            return response.json()
+            with st.spinner(f"Processing (Attempt {attempt + 1}/{max_retries})..."):
+                response = requests.post(url, headers=headers, json=payload, timeout=30)
+                response.raise_for_status()
+                return response.json()
         except requests.exceptions.RequestException as e:
             if attempt == max_retries - 1:
-                return {"error": f"API Error: {str(e)}"}
-            time.sleep(2 ** attempt)  # Exponential backoff
-    return {"error": "Max retries reached"}
+                st.error(f"Error: {str(e)}")
+                return None
+            time.sleep(2 ** attempt)
+    return None
 
-def summarize_text(text):
-    url = f"https://api-inference.huggingface.co/models/{SUMMARIZER_MODEL}"
+def generate_summary(text):
+    """Enhanced summarization with style and length control"""
+    length_tokens = {
+        "Very Short": 50,
+        "Short": 100,
+        "Medium": 150,
+        "Long": 250
+    }
+    
+    style_prompts = {
+        "Concise": "Summarize this concisely: ",
+        "Detailed": "Provide a detailed summary of: ",
+        "Academic": "Create an academic summary of: "
+    }
+    
+    prompt = f"{style_prompts[style]}{text}"
     payload = {
-        "inputs": text,
+        "inputs": prompt,
         "parameters": {
-            "max_length": 150,
-            "min_length": 40,
+            "max_length": length_tokens[summary_length],
+            "min_length": length_tokens[summary_length] // 2,
             "do_sample": False
         }
     }
-    result = query_huggingface(url, payload)
     
-    if isinstance(result, list):
-        return result[0]['summary_text']
-    elif isinstance(result, dict) and "error" in result:
-        return f"⏳ {result['error']}"
-    return "❌ Unexpected summarizer error."
+    result = query_model(MODELS["summarizer"], payload)
+    return result[0] if result else "Error generating summary."
 
-def generate_quiz(text):
-    url = f"https://api-inference.huggingface.co/models/{QUIZ_MODEL}"
-    # Format prompt for better question generation
-    prompt = f"Generate a multiple choice question based on this text: {text}"
-    payload = {"inputs": prompt}
+def generate_quiz_questions(text):
+    """Enhanced quiz generation with multiple types and difficulty levels"""
+    questions = []
     
-    result = query_huggingface(url, payload)
+    for _ in range(num_questions):
+        if "Multiple Choice" in question_type:
+            prompt = f"Generate a {difficulty.lower()} multiple choice question about: {text}"
+            result = query_model(MODELS["quiz"], {"inputs": prompt})
+            if result:
+                questions.append({"type": "mc", "content": result[0]})
+                
+        if "True/False" in question_type:
+            prompt = f"Generate a {difficulty.lower()} true/false question about: {text}"
+            result = query_model(MODELS["quiz"], {"inputs": prompt})
+            if result:
+                questions.append({"type": "tf", "content": result[0]})
+                
+        if "Short Answer" in question_type:
+            prompt = f"Generate a {difficulty.lower()} short answer question about: {text}"
+            result = query_model(MODELS["qa"], {"inputs": prompt})
+            if result:
+                questions.append({"type": "sa", "content": result[0]})
     
-    if isinstance(result, list):
-        return result[0]['generated_text']
-    elif isinstance(result, dict) and "error" in result:
-        return f"⏳ {result['error']}"
-    return "❌ Unexpected quiz generation error."
+    return questions
 
-def solve_equation(expr):
+def solve_math(expr):
+    """Enhanced math solver with step-by-step solutions"""
     try:
-        # Handle multiple equations
+        steps = []
         if ";" in expr:
             equations = expr.split(";")
             results = []
             for eq in equations:
+                eq = eq.strip()
+                steps.append(f"Solving equation: {eq}")
+                
                 if "=" in eq:
-                    lhs, rhs = map(sympy.sympify, eq.strip().split("="))
+                    lhs, rhs = map(sympy.sympify, eq.split("="))
                     x = symbols("x")
                     equation = Eq(lhs, rhs)
                     sol = solve(equation, x)
+                    steps.append(f"Solution: x = {sol}")
                     results.append(f"x = {sol}")
                 else:
-                    result = sympy.sympify(eq.strip())
+                    result = sympy.sympify(eq)
+                    steps.append(f"Evaluated result: {result}")
                     results.append(f"Result = {result}")
-            return "\n".join(results)
+                
+                steps.append("---")
+            
+            return {"result": "\n".join(results), "steps": steps}
         else:
+            steps.append(f"Processing: {expr}")
             if "=" in expr:
                 lhs, rhs = map(sympy.sympify, expr.split("="))
                 x = symbols("x")
                 equation = Eq(lhs, rhs)
                 sol = solve(equation, x)
-                return f"x = {sol}"
+                steps.append(f"Solution found: x = {sol}")
+                return {"result": f"x = {sol}", "steps": steps}
             else:
                 result = sympy.sympify(expr)
-                return f"Result = {result}"
+                steps.append(f"Evaluated result: {result}")
+                return {"result": f"Result = {result}", "steps": steps}
     except Exception as e:
-        return f"❌ Invalid math expression: {str(e)}"
+        return {"result": f"Error: {str(e)}", "steps": ["An error occurred during calculation"]}
 
-# Input area with contextual help
-if feature == "Summarizer":
+# Main content area
+st.markdown("## 🎯 What would you like to learn today?")
+
+# Input area based on selected feature
+if feature == "📝 Smart Summarizer":
     user_input = st.text_area(
-        "Enter the text to summarize:",
+        "Enter your text to summarize:",
         height=200,
-        help="Paste your text here. Works best with content between 100-1000 words."
+        help="Paste any text you want to summarize. Works best with 100-2000 words.",
+        placeholder="Paste your text here..."
     )
-elif feature == "Math Solver":
+    
+elif feature == "🧮 Math Solver":
+    st.info("💡 Tip: Separate multiple expressions with semicolons (;)")
     user_input = st.text_input(
         "Enter your mathematical expression:",
-        help="Examples:\n2x + 3 = 7\n2 * (3 + 4)\nFor multiple equations, separate with semicolon"
+        help="Examples:\n• 2x + 3 = 7\n• 2 * (3 + 4)\n• x^2 - 4 = 0",
+        placeholder="Enter your expression here..."
     )
-else:
+    
+else:  # Quiz Generator
     user_input = st.text_area(
         "Enter the text to generate questions from:",
         height=200,
-        help="Enter a paragraph or concept you want to create questions about"
+        help="Enter the content you want to create questions about.",
+        placeholder="Paste your study material here..."
     )
 
-if st.button("Get Result", type="primary"):
+# Process button
+if st.button("✨ Process", type="primary"):
     if not user_input.strip():
-        st.warning("Please enter something!")
+        st.warning("Please enter some content to process!")
     else:
-        with st.spinner("Processing your request..."):
-            if feature == "Summarizer":
-                result = summarize_text(user_input)
-                st.subheader("Summary")
-                st.write(result)
-                
-            elif feature == "Math Solver":
-                result = solve_equation(user_input)
-                st.subheader("Solution")
-                st.write(result)
-                
-            elif feature == "Quiz Generator":
-                result = generate_quiz(user_input)
-                st.subheader("Generated Question")
-                st.write(result)
-                
-            # Show original text for reference
+        try:
+            if feature == "📝 Smart Summarizer":
+                with st.spinner("Generating summary..."):
+                    summary = generate_summary(user_input)
+                    st.markdown("### 📋 Summary")
+                    st.markdown(f'<div class="success-box">{summary}</div>', unsafe_allow_html=True)
+                    
+            elif feature == "🧮 Math Solver":
+                with st.spinner("Solving..."):
+                    solution = solve_math(user_input)
+                    st.markdown("### 📊 Solution")
+                    st.markdown(f'<div class="success-box">{solution["result"]}</div>', unsafe_allow_html=True)
+                    
+                    with st.expander("View Step-by-Step Solution"):
+                        for step in solution["steps"]:
+                            st.write(step)
+                    
+            else:  # Quiz Generator
+                with st.spinner("Generating questions..."):
+                    questions = generate_quiz_questions(user_input)
+                    st.markdown("### 📝 Generated Questions")
+                    
+                    for i, q in enumerate(questions, 1):
+                        with st.expander(f"Question {i} ({q['type'].upper()})"):
+                            st.markdown(f'<div class="info-box">{q["content"]}</div>', unsafe_allow_html=True)
+                            
+                            if q["type"] == "mc":
+                                st.radio(f"Select answer for Q{i}", ["A", "B", "C", "D"], key=f"q{i}")
+                            elif q["type"] == "tf":
+                                st.radio(f"Select answer for Q{i}", ["True", "False"], key=f"q{i}")
+                            else:
+                                st.text_input("Your answer:", key=f"q{i}")
+            
+            # Show original input
             with st.expander("Show Original Input"):
-                st.write(user_input)
+                st.markdown(f'<div class="warning-box">{user_input}</div>', unsafe_allow_html=True)
+                
+        except Exception as e:
+            st.error(f"An error occurred: {str(e)}")
+            st.warning("Please try again with different input or settings.")
+
+# Footer
+st.markdown("---")
+st.markdown(
+    """
+    <div style='text-align: center'>
+        <p>Made with ❤️ by Your Smart Study Assistant</p>
+        <p>Using advanced AI models to help you learn better</p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
