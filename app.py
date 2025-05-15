@@ -3,7 +3,6 @@ import requests
 import sympy
 from sympy import symbols, Eq, solve
 import time
-import random
 
 # Configure page
 st.set_page_config(
@@ -54,8 +53,8 @@ headers = {"Authorization": f"Bearer {API_TOKEN}"}
 
 # Updated Models configuration with verified working models
 MODELS = {
-    "summarizer": "sshleifer/distilbart-cnn-12-6",  # Changed to a lighter, faster model
-    "quiz": "google/flan-t5-base"                   # Changed to a more reliable model
+    "summarizer": "facebook/bart-large-cnn",        # Proven to work well for summarization
+    "qa": "kiri-ai/t5-base-qa-summary-emotion"      # Multi-task model that can handle QA and summaries
 }
 
 # Sidebar
@@ -84,11 +83,6 @@ with st.sidebar:
         
     elif feature == "❓ Quiz Generator":
         st.markdown("### Quiz Settings")
-        question_type = st.multiselect(
-            "Question Types",
-            ["Multiple Choice", "True/False", "Short Answer"],
-            default=["Multiple Choice"]
-        )
         num_questions = st.slider("Number of Questions", 1, 5, 3)
 
 def query_model(model_name, payload, max_retries=3):
@@ -109,7 +103,7 @@ def query_model(model_name, payload, max_retries=3):
     return None
 
 def generate_summary(text):
-    """Improved summarization with better prompting"""
+    """Improved summarization using BART-large-CNN"""
     length_map = {
         "Very Short": 50,
         "Short": 100,
@@ -135,44 +129,30 @@ def generate_summary(text):
     return "Error generating summary."
 
 def generate_quiz_questions(text):
-    """Improved quiz generation with T5"""
+    """Generate questions using T5 QA model"""
     questions = []
     
-    templates = {
-        "Multiple Choice": [
-            f"Generate a multiple choice question with 4 options about this text: {text}",
-            f"Create a quiz question with options A, B, C, D based on: {text}"
-        ],
-        "True/False": [
-            f"Create a true/false question about: {text}",
-            f"Make a statement that is either true or false about: {text}"
-        ],
-        "Short Answer": [
-            f"Generate a short answer question about: {text}",
-            f"Create a question that tests understanding of: {text}"
-        ]
-    }
-    
     for _ in range(num_questions):
-        for q_type in question_type:
-            prompt = random.choice(templates[q_type])
-            
-            payload = {
-                "inputs": prompt,
-                "parameters": {
-                    "max_length": 150,
-                    "temperature": 0.7,
-                    "do_sample": True,
-                    "top_p": 0.9
-                }
+        # Format prompt for question generation
+        prompt = f"generate question: {text}"
+        
+        payload = {
+            "inputs": prompt,
+            "parameters": {
+                "max_length": 150,
+                "min_length": 30,
+                "do_sample": True,
+                "temperature": 0.7,
+                "top_p": 0.9
             }
-            
-            result = query_model(MODELS["quiz"], payload)
-            if result and isinstance(result, list):
-                questions.append({
-                    "type": q_type,
-                    "content": result[0]['generated_text'].strip()
-                })
+        }
+        
+        result = query_model(MODELS["qa"], payload)
+        if result and isinstance(result, list):
+            questions.append({
+                "question": result[0]['generated_text'],
+                "type": "open"
+            })
     
     return questions
 
@@ -275,15 +255,9 @@ if st.button("✨ Process", type="primary"):
                         st.markdown("### 📝 Generated Questions")
                         
                         for i, q in enumerate(questions, 1):
-                            with st.expander(f"Question {i} ({q['type']})"):
-                                st.markdown(f'<div class="info-box">{q["content"]}</div>', unsafe_allow_html=True)
-                                
-                                if q["type"] == "Multiple Choice":
-                                    st.radio(f"Select answer for Q{i}", ["A", "B", "C", "D"], key=f"q{i}")
-                                elif q["type"] == "True/False":
-                                    st.radio(f"Select answer for Q{i}", ["True", "False"], key=f"q{i}")
-                                else:
-                                    st.text_input("Your answer:", key=f"q{i}")
+                            with st.expander(f"Question {i}"):
+                                st.markdown(f'<div class="info-box">{q["question"]}</div>', unsafe_allow_html=True)
+                                st.text_input("Your answer:", key=f"q{i}")
                     else:
                         st.error("Failed to generate questions. Please try again.")
             
