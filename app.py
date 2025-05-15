@@ -87,12 +87,13 @@ if st.button("🔍 Run"):
                     "Authorization": f"Bearer {st.secrets['HF_TOKEN']}",
                     "Content-Type": "application/json"
                 }
-                prompt = f"Generate {num_questions} multiple choice quiz questions with 4 options and answers for the topic: {quiz_topic}. Format them clearly."
+                prompt = f"""Generate {num_questions} multiple-choice questions (MCQs) with 4 options and answers on the topic "{quiz_topic}". 
+    Each question should be clearly numbered and provide the correct answer after the options."""
                 payload = {
                     "inputs": prompt
                 }
                 response = requests.post(
-                    "https://api-inference.huggingface.co/models/google/flan-t5-xl",
+                    "https://api-inference.huggingface.co/models/tiiuae/falcon-7b-instruct",
                     headers=headers, json=payload
                 )
                 result = response.json()
@@ -100,7 +101,7 @@ if st.button("🔍 Run"):
                     st.error("❌ Error while generating quiz: " + result['error'])
                 elif isinstance(result, list):
                     st.success("🎯 Quiz Generator Result")
-                    st.write(result[0]['generated_text'])
+                    st.write(result[0].get('generated_text', '⚠️ No quiz generated.'))
                 else:
                     st.error("❌ Unexpected response format from model.")
             except Exception as e:
