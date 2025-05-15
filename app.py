@@ -1,5 +1,6 @@
 import streamlit as st
 import requests
+import json
 
 # Page config
 st.set_page_config(page_title="📚 Student Helper Chatbot", layout="centered")
@@ -49,16 +50,27 @@ if st.button("🔍 Run"):
             except Exception as e:
                 st.error(f"❌ Exception: {e}")
 
-        # --- Math Solver using MathJS ---
+        # --- Math Solver using MathGPT API ---
         elif feature == "Math Solver":
             try:
-                url = "http://api.mathjs.org/v4/"
-                response = requests.post(url, json={"expr": user_input})
-                if response.status_code == 200:
-                    st.success("✅ Solution:")
-                    st.code(response.text)
+                math_prompt = f"Solve the following math problem step by step: {user_input}"
+                headers = {
+                    "Authorization": f"Bearer {st.secrets['HF_TOKEN']}",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "inputs": math_prompt
+                }
+                response = requests.post(
+                    "https://api-inference.huggingface.co/models/google/flan-t5-large",
+                    headers=headers, json=payload
+                )
+                result = response.json()
+                if isinstance(result, dict) and 'error' in result:
+                    st.error("❌ Error: " + result['error'])
                 else:
-                    st.error("❌ Error: Invalid math expression.")
+                    st.success("✅ Solution:")
+                    st.write(result[0]['generated_text'])
             except Exception as e:
                 st.error(f"❌ Exception: {e}")
 
@@ -69,7 +81,7 @@ if st.button("🔍 Run"):
                     "Authorization": f"Bearer {st.secrets['HF_TOKEN']}",
                     "Content-Type": "application/json"
                 }
-                prompt = f"Generate {num_questions} MCQ questions with answers from the following text:\n{user_input}"
+                prompt = f"Generate {num_questions} multiple-choice quiz questions with answers from the following topic: {user_input}"
                 payload = {
                     "inputs": prompt
                 }
@@ -80,8 +92,10 @@ if st.button("🔍 Run"):
                 result = response.json()
                 if isinstance(result, dict) and 'error' in result:
                     st.error("❌ Error while generating quiz: " + result['error'])
-                else:
+                elif isinstance(result, list):
                     st.success("🎯 Quiz Generator Result")
                     st.write(result[0]['generated_text'])
+                else:
+                    st.error("❌ Unexpected response format from model.")
             except Exception as e:
                 st.error(f"❌ Exception: {e}")
