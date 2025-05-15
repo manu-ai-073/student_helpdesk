@@ -44,16 +44,18 @@ def summarize_with_cohere(text):
         return f"❌ Error: {e}"
 
 # Function: Math Solver using WolframAlpha API
-def solve_math_wolfram(query):
+def solve_math_mathjs(query):
+    url = "http://api.mathjs.org/v4/"
+    payload = {"expr": query}
     try:
-        url = f"http://api.wolframalpha.com/v1/result?i={requests.utils.quote(query)}&appid={WOLFRAM_APP_ID}"
-        response = requests.get(url)
+        response = requests.post(url, json=payload)
         if response.status_code == 200:
             return response.text
         else:
-            return "❌ Wolfram Alpha could not solve this."
+            return "❌ Could not solve the expression."
     except Exception as e:
         return f"❌ Error: {e}"
+
 
 # Function: Quiz Generator using T5 Model from Hugging Face
 def generate_quiz(text, num_questions=5):
