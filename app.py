@@ -43,19 +43,25 @@ def summarize_text(text):
         return "❌ Error while summarizing."
 
 # Math Solver
+# Math Solver (Fixed)
 def solve_equation(expr):
     try:
-        x = symbols("x")
+        x = symbols("x")  # define the variable
         if "=" in expr:
-            lhs, rhs = map(sympy.sympify, expr.split("="))
+            # Split equation and parse both sides
+            lhs, rhs = expr.split("=")
+            lhs = sympy.sympify(lhs.strip())
+            rhs = sympy.sympify(rhs.strip())
             eq = Eq(lhs, rhs)
             sol = solve(eq, x)
-            return f"✅ Solution: x = {sol}"
+            return f"✅ Solution: x = {sol[0]}" if sol else "❌ No solution found."
         else:
+            # Evaluate as expression
             res = sympy.sympify(expr)
             return f"✅ Result: {res}"
     except Exception as e:
-        return "❌ Error: Invalid math expression."
+        return f"❌ Error: {str(e)}"
+
 
 # Quiz Generator
 def generate_quiz(text):
