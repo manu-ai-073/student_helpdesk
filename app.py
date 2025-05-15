@@ -4,7 +4,7 @@ import sympy as sp
 import os
 
 # 🔐 Set your OpenAI API key here or use an environment variable
-openai.api_key = os.getenv("OPENAI_API_KEY") or "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"
+openai.api_key = os.getenv("OPENAI_API_KEY") or "api-key"
 
 # 📌 Streamlit UI setup
 st.set_page_config(page_title="Student Helper Chatbot", layout="centered")
