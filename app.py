@@ -1,54 +1,29 @@
 import streamlit as st
-import requests
 import sympy
 from sympy import symbols, Eq, solve
+import requests
 
-# Load Hugging Face Token securely
-API_TOKEN = st.secrets["HF_TOKEN"]
-headers = {"Authorization": f"Bearer {API_TOKEN}"}
+# ------------------ CONFIG ------------------
+st.set_page_config(page_title="📚 Student Helper Chatbot", layout="centered")
+st.title("🤖 Student Helper Chatbot")
+st.markdown("""
+This chatbot helps you with:
+- 🧠 Summarizing text
+- 🧮 Solving math expressions or equations
+- 📝 Generating quizzes from your input
+""")
 
-# Hugging Face models
-SUMMARIZER_MODEL = "facebook/bart-large-cnn"
-QUIZ_MODEL = "tuner007/t5_paraphrase_paws"
+# ------------------ INPUT ------------------
+st.sidebar.title("🔧 Features")
+feature = st.sidebar.radio("Select a feature:", ["Math Solver", "Summarizer", "Quiz Generator"])
 
-# App layout
-st.set_page_config(page_title="🎓 Student Helper", layout="centered")
-st.title("🎓 Student Helper Chatbot")
-st.markdown("An all-in-one tool to help students with summarizing, math solving, and quiz creation.")
+input_text = st.text_area("✍️ Enter your text or equation here:")
 
-# Feature selection UI
-col1, col2, col3 = st.columns(3)
-with col1:
-    summarize_mode = st.button("📄 Summarizer")
-with col2:
-    math_mode = st.button("🧮 Math Solver")
-with col3:
-    quiz_mode = st.button("❓ Quiz Generator")
-
-# Text input area
-user_input = st.text_area("✍️ Enter your text or equation here:")
-
-# Summarizer
-def summarize_text(text):
-    url = f"https://api-inference.huggingface.co/models/{SUMMARIZER_MODEL}"
-    payload = {"inputs": text}
-    res = requests.post(url, headers=headers, json=payload)
-    try:
-        result = res.json()
-        if isinstance(result, list):
-            return "✅ Summary:\n\n" + result[0]["summary_text"]
-        elif "error" in result:
-            return f"⚠️ {result['error']}"
-    except:
-        return "❌ Error while summarizing."
-
-# Math Solver
-# Math Solver (Fixed)
+# ------------------ Math Solver ------------------
 def solve_equation(expr):
     try:
         x = symbols("x")  # define the variable
         if "=" in expr:
-            # Split equation and parse both sides
             lhs, rhs = expr.split("=")
             lhs = sympy.sympify(lhs.strip())
             rhs = sympy.sympify(rhs.strip())
@@ -56,37 +31,61 @@ def solve_equation(expr):
             sol = solve(eq, x)
             return f"✅ Solution: x = {sol[0]}" if sol else "❌ No solution found."
         else:
-            # Evaluate as expression
             res = sympy.sympify(expr)
             return f"✅ Result: {res}"
     except Exception as e:
         return f"❌ Error: {str(e)}"
 
-
-# Quiz Generator
-def generate_quiz(text):
-    url = f"https://api-inference.huggingface.co/models/{QUIZ_MODEL}"
-    payload = {"inputs": f"Create a question from: {text}"}
-    res = requests.post(url, headers=headers, json=payload)
+# ------------------ Summarizer ------------------
+def summarize_text(text):
     try:
-        result = res.json()
-        if isinstance(result, list):
-            return "✅ Quiz Question:\n\n" + result[0]["generated_text"]
-        elif "error" in result:
-            return f"⚠️ {result['error']}"
-    except:
-        return "❌ Error while generating quiz."
+        API_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn"
+        headers = {"Authorization": f"Bearer {st.secrets['HF_TOKEN']}"}
+        payload = {"inputs": text}
+        response = requests.post(API_URL, headers=headers, json=payload)
+        summary = response.json()
+        if isinstance(summary, list):
+            return f"✅ Summary: {summary[0]['summary_text']}"
+        else:
+            return f"❌ Error while summarizing."
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
 
-# Response Logic
-if user_input:
-    if summarize_mode:
-        st.markdown("### 🧠 Summarizer Result")
-        st.write(summarize_text(user_input))
-    elif math_mode:
-        st.markdown("### 🔢 Math Solver Result")
-        st.write(solve_equation(user_input))
-    elif quiz_mode:
-        st.markdown("### 🎯 Quiz Generator Result")
-        st.write(generate_quiz(user_input))
-else:
-    st.info("Enter your input above and choose a feature to proceed.")
+# ------------------ Quiz Generator ------------------
+def generate_quiz(text):
+    try:
+        API_URL = "https://api-inference.huggingface.co/models/tuner007/t5_paraphrase_paws"
+        headers = {"Authorization": f"Bearer {st.secrets['HF_TOKEN']}"}
+        payload = {"inputs": f"paraphrase: {text} </s>", "parameters": {"num_return_sequences": 1}}
+        response = requests.post(API_URL, headers=headers, json=payload)
+        result = response.json()
+        if isinstance(result, list):
+            return f"✅ Quiz Question: {result[0]['generated_text']}"
+        else:
+            return f"❌ Error while generating quiz."
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
+
+# ------------------ Output Area ------------------
+if st.button("🔍 Submit"):
+    if not input_text.strip():
+        st.warning("Please enter some input.")
+    else:
+        if feature == "Math Solver":
+            result = solve_equation(input_text)
+            st.subheader("🧮 Math Solver Result")
+            st.write(result)
+
+        elif feature == "Summarizer":
+            result = summarize_text(input_text)
+            st.subheader("🧠 Summary")
+            st.write(result)
+
+        elif feature == "Quiz Generator":
+            result = generate_quiz(input_text)
+            st.subheader("🎯 Quiz Generator Result")
+            st.write(result)
+
+# ------------------ Footer ------------------
+st.markdown("---")
+st.caption("Built with ❤️ using Streamlit and Hugging Face APIs")
